@@ -1,4 +1,4 @@
-name: Build Docker Image
+name: Docker Pipeline (with dependencies)
 
 on:
   push:
@@ -7,11 +7,35 @@ on:
 
 jobs:
   build:
+    name: Build Docker Image
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t static-site:${{ github.sha }} .
+      - name: Build image
+        run: docker build -t static-site:latest .
+
+  test:
+    name: Run Smoke Test
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Run container
+        run: |
+          docker run -d --name site -p 8080:80 static-site:latest
+          sleep 5
+          curl -I http://localhost:8080
+          docker rm -f site
+
+  finish:
+    name: Pipeline Finished
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Done
+        run: echo "Pipeline completed successfully!"
+
