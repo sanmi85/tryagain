@@ -1,24 +1,120 @@
-name: Basic Pipeline with Needs
+name: Real-life CI Pipeline (Build, Scan, Push)
 
 on:
   push:
     branches: ["main"]
   workflow_dispatch:
 
+# Good real-life defaults
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+  IMAGE_TAG: ${{ github.sha }}
+
 jobs:
-  setup:
+  lint:
+    name: Lint Dockerfile
     runs-on: ubuntu-latest
     steps:
-      - name: Setup step
-        run: echo "Starting pipeline..."
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Hadolint (Dockerfile linter)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
 
   build:
-    needs: setup
+    name: Build Image
+    needs: lint
     runs-on: ubuntu-latest
-
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Image metadata
+        id: meta
+        run: |
+          echo "image=${IMAGE_NAME}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      # Cache makes builds much faster (real life)
+      - name: Build (local) with cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ steps.meta.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  scan:
+    name: Security Scan (Trivy)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan built image
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ needs.build.outputs.image }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  push:
+    name: Push to GHCR
+    needs: scan
+    runs-on: ubuntu-latest
+    # Only push from main (real life)
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy (placeholder)
+    needs: push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy step
+        run: |
+          echo "Deploy would happen here."
+          echo "Image: $IMAGE_NAME:$IMAGE_TAG"
+
 
 
     
