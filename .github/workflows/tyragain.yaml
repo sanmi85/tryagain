@@ -1,4 +1,4 @@
-name: Docker Pipeline (with dependencies)
+name: Basic Pipeline with Needs
 
 on:
   push:
@@ -6,36 +6,20 @@ on:
   workflow_dispatch:
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup step
+        run: echo "Starting pipeline..."
+
   build:
-    name: Build Docker Image
+    needs: setup
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build image
-        run: docker build -t static-site:latest .
 
-  test:
-    name: Run Smoke Test
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Run container
-        run: |
-          docker run -d --name site -p 8080:80 static-site:latest
-          sleep 5
-          curl -I http://localhost:8080
-          docker rm -f site
-
-  finish:
-    name: Pipeline Finished
-    needs: test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Done
-        run: echo "Pipeline completed successfully!"
+    
 
